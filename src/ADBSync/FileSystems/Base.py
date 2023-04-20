@@ -2,11 +2,14 @@ from __future__ import annotations
 from typing import Iterable, List, Tuple, Union
 import logging
 import os
+import re
 import stat
 
 from ..SAOLogging import perror
 
 class FileSystem():
+    RE_PERMISSION_DENIED = re.compile("^.*: Permission denied$")
+
     def __init__(self, adb_arguments: List[str]) -> None:
         self.adb_arguments = adb_arguments
 
@@ -27,14 +30,18 @@ class FileSystem():
             return self._get_files_tree(tree_path_realpath, tree_path_stat_realpath, follow_links = follow_links)
         elif stat.S_ISDIR(tree_path_stat.st_mode):
             tree = {".": (60 * (int(tree_path_stat.st_atime) // 60), 60 * (int(tree_path_stat.st_mtime) // 60))}
-            for filename, stat_object_child, in self.lstat_in_dir(tree_path):
-                if filename in [".", ".."]:
-                    continue
-                tree[filename] = self._get_files_tree(
-                    self.join(tree_path, filename),
-                    stat_object_child,
-                    follow_links = follow_links)
-            return tree
+            try:
+              for filename, stat_object_child, in self.lstat_in_dir(tree_path):
+                  if filename in [".", ".."]:
+                      continue
+                  tree[filename] = self._get_files_tree(
+                      self.join(tree_path, filename),
+                      stat_object_child,
+                      follow_links = follow_links)
+              return tree
+            except PermissionError as e:
+              perror(f"Skipping file {tree_path}", e)
+              return None
         elif stat.S_ISREG(tree_path_stat.st_mode):
             return (60 * (int(tree_path_stat.st_atime) // 60), 60 * (int(tree_path_stat.st_mtime) // 60)) # minute resolution
         else:
@@ -77,8 +84,11 @@ class FileSystem():
                 if not show_progress:
                     # log this instead of letting adb display output
                     logging.info(f"{relative_tree_path}")
-                self.push_file_here(tree_path, destination_root, show_progress = show_progress)
-                self.utime(destination_root, tree)
+                try:
+                    self.push_file_here(tree_path, destination_root, show_progress = show_progress)
+                    self.utime(destination_root, tree)
+                except PermissionError as e:
+                    perror(f"Skipping file {tree_path}", e)
         elif isinstance(tree, dict):
             try:
                 tree.pop(".") # directory needs making

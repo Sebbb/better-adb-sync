@@ -118,7 +118,9 @@ class AndroidFileSystem(FileSystem):
             raise BrokenPipeError
 
     def ls_to_stat(self, line: str) -> Tuple[str, os.stat_result]:
-        if self.RE_NO_SUCH_FILE.fullmatch(line):
+        if self.RE_PERMISSION_DENIED.fullmatch(line):
+            raise PermissionError
+        elif self.RE_NO_SUCH_FILE.fullmatch(line):
             raise FileNotFoundError
         elif self.RE_LS_NOT_A_DIRECTORY.fullmatch(line):
             raise NotADirectoryError
